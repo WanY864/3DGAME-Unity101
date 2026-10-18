@@ -97,35 +97,126 @@ This is my development reflection for the Unity 101 final project. My biggest is
 
 ## 1. Main Problem: Mouse Camera Stuttering in the Windows Build
 
-### What went wrong
+### The problem I noticed
 
-When I tested Depthbound inside the Unity Editor, looking around with the mouse felt normal. After I exported it to a Windows EXE, though, the camera movement became very uncomfortable. Sometimes I would move the mouse to the right and the camera seemed to stop for a split second, or move slightly back. It almost felt like the mouse was not completely captured by the game window.
+The most frustrating problem happened near the end, when I finally exported Depthbound as a Windows EXE. In Unity's **Game** window, the first-person camera worked normally. But in the standalone game, moving the mouse felt strangely sticky. When I moved to the right, sometimes the camera would stop for a moment and then jump again. Occasionally it looked as if the view moved slightly back to the left. It felt like the game was losing my mouse for a split second.
 
-This mattered a lot because looking around is such a basic part of a first-person game. Even though the game could run, it did not feel good to play.
+At first I described it as a camera "re-centering" problem, but after playing more carefully I realized it was mostly **stuttering**, not an actual automatic turn back to the center. I could stand completely still and reproduce it just by moving the mouse. The enemies and other animations still looked smooth, which was confusing because the whole game did not seem slow.
 
-### My investigation (including the guesses that were wrong)
+Since Depthbound is played in first person, this was a serious problem. I did not want to submit a game where the very basic action of looking around felt broken.
 
-My first guess was that the wireless mouse or Windows window focus was causing the problem. I tried clicking back into the game, changing between windowed and full-screen mode, and making the game lock the cursor more aggressively. These changes did not fix the stutter.
+### Test 1 — Was my mouse or the game window losing focus?
 
-Then I thought it might be Unity's mouse input system. I checked the Active Input Handling setting, tried different ways to read the mouse movement, and experimented with input smoothing. Some of these attempts even caused compilation errors, so I had to go back and fix the scripts before I could build again. That was a good reminder to change one thing at a time.
+My first guess was the mouse itself. I was using a **2.4 GHz wireless mouse**, so I considered the connection or polling rate. But the same mouse worked normally in Windows and in the Unity Editor, so hardware was not a convincing explanation.
 
-The clue that helped me most was a simple playtest: **the monsters and animations stayed smooth, and only the camera movement felt wrong**. It also happened in the standalone EXE but not in the Editor. This made me realize I should check the differences between running in the Editor and running a Windows build instead of only looking at the mouse code.
+Next, I thought the Windows game window might not have captured the cursor correctly. I tried clicking into the game again and pausing and resuming it. I also changed the player script to keep the cursor locked during gameplay while still unlocking it for pause menus.
 
-I also encountered a separate Windows-build problem: the game launched to a black screen. I checked Player.log and found that the main menu was trying to create a material with a missing shader. Including the needed shader in the build helped get the menu working. This was another reason I learned to look at build logs rather than guess.
-
-### What finally worked
-
-The change that actually made the camera feel smooth was **disabling VSync and setting a 60 FPS target** for the standalone game. The final frame-rate settings in [SceneBootstrap.cs](Assets/Scripts/SceneBootstrap.cs) are:
+Part of the code in [FirstPersonController.cs](Assets/Scripts/FirstPersonController.cs) checks the lock state:
 
 ~~~csharp
-// Windows build: use a 60 FPS target without VSync.
+if (Application.isFocused)
+{
+    if (Cursor.lockState != CursorLockMode.Locked)
+    {
+        Cursor.lockState = CursorLockMode.Locked;
+    }
+
+    Cursor.visible = false;
+}
+~~~
+
+This helped make the intended mouse behavior clear, but **it did not fix the stuttering**. The problem was more complicated than simply keeping the cursor inside the window.
+
+### Test 2 — Window resizing and the camera
+
+I noticed another annoying behavior in the EXE: I could resize the window, but later it seemed to change size again. I checked [RuntimeSettings.cs](Assets/Scripts/RuntimeSettings.cs) and found that the game explicitly called Screen.SetResolution() for its windowed mode.
+
+I changed ApplyDisplay() so that, after applying the display settings once, it would not keep applying them again during the same session:
+
+~~~csharp
+if (displayAppliedThisSession)
+{
+    return;
+}
+~~~
+
+This dealt with a separate window-settings issue, but **the mouse still felt stuck sometimes**.
+
+We also looked at the camera and the player's physics. My player moves with a Rigidbody, so I wondered whether the physics update rate could be different from the camera's frame rate. However, the Rigidbody already had Interpolate enabled. More importantly, the stutter happened when I was standing still, too. That made me less confident that player movement physics was the main cause.
+
+### Test 3 — Trying different mouse input code
+
+After that I focused on Unity's input system. The game originally read mouse movement using the old Input Manager:
+
+~~~csharp
+float rawMouseX =
+    Input.GetAxis("Mouse X") * sensitivity;
+
+float rawMouseY =
+    Input.GetAxis("Mouse Y") * sensitivity;
+~~~
+
+I checked **Project Settings > Player > Active Input Handling** and tried the **Both** option, which allows the old and new input systems. That did not solve the issue. I learned that setting it to Both does not automatically change which API the script uses.
+
+I also experimented with GetAxisRaw() and with reading Mouse.current.delta from the newer Input System. I hoped that a different source of mouse movement data might avoid the tiny stops in the camera. But the tests were not successful.
+
+Some of these edits created new problems. I made a mistake with the capitalization of UnityEngine in a using statement, and at another point Unity entered **Safe Mode** because of compile errors involving Input System package tests. I had to fix or back out the input changes before continuing. It was frustrating because I was trying to fix one problem and accidentally creating another one.
+
+Eventually I went back to the familiar input method and tried smoothing the values instead of lowering the mouse reading frequency:
+
+~~~csharp
+float smoothing =
+    1f - Mathf.Exp(-15f * Time.unscaledDeltaTime);
+
+smoothMouseX = Mathf.Lerp(
+    smoothMouseX, rawMouseX, smoothing);
+
+smoothMouseY = Mathf.Lerp(
+    smoothMouseY, rawMouseY, smoothing);
+~~~
+
+This can make input changes less abrupt, but it **still did not solve the Windows EXE issue**. I learned that smoothing a symptom is not the same as finding its cause.
+
+### Test 4 — Checking what was different in the Windows build
+
+At this point I compared the two environments again:
+
+- **Unity Editor:** mouse movement was fine.
+- **Windows EXE:** the camera stuttered, even without walking.
+- **Other gameplay:** enemy movement and visual effects kept running normally.
+- **Mouse-lock changes, input-mode changes, and smoothing:** none had fixed it.
+
+Instead of repeatedly rewriting the player controller, I started looking at the standalone game's **graphics and frame-rate configuration**. The Windows Player.log also showed that the game was running with **Direct3D 11**, so I had no good reason to blame DirectX 12.
+
+I had already learned the usefulness of Player.log from a *different* build issue: one exported version showed a black screen because the main menu tried to create a Material using a Shader that was missing from the build. That issue was related to shader inclusion, not mouse input, but it taught me to treat the standalone build as its own thing and check what it was actually doing.
+
+### What finally worked — VSync off, target 60 FPS
+
+The successful change was in [SceneBootstrap.cs](Assets/Scripts/SceneBootstrap.cs). I disabled **vertical synchronization (VSync)** and set the game's frame-rate target to **60 FPS**:
+
+~~~csharp
+// Final Windows build frame-rate settings
 QualitySettings.vSyncCount = 0;
 Application.targetFrameRate = 60;
 ~~~
 
-I also discovered a second targetFrameRate assignment later in the same method. That could override my 60 FPS setting, so I removed the duplicate. I rebuilt the Windows version and tested the camera again.
+**After this change and a new Windows build, the mouse-camera stutter stopped in my test.** That was the first test where the game finally felt comfortable to look around in again.
 
-I still do not fully understand every reason this particular setup behaved differently in the EXE, but I learned that frame timing and input responsiveness are connected. **A game that feels fine in the Unity Editor is not automatically ready to submit as a Windows build.**
+One more small detail came up when reviewing the final GitHub code: there was also an older Application.targetFrameRate = 120 assignment farther down the same method. That could override the intended value of 60, so I removed the duplicate from the repository. The code now has one clear frame-rate setting.
+
+I cannot say for sure exactly why VSync and frame timing produced this behavior on my computer. What I can say from my tests is that **changing mouse hardware assumptions, cursor locking, input APIs, and smoothing did not solve it, while changing the standalone frame-rate settings did**.
+
+### What I learned from this problem
+
+This debugging process took much longer than I expected, but it taught me several useful things:
+
+1. **Test the actual exported game.** Something that works in the Unity Editor can behave differently as a Windows EXE.
+2. **Describe the problem precisely.** "The camera moves back" and "the camera freezes briefly" sound similar but lead to different guesses.
+3. **Do not assume the first explanation is correct.** I spent time blaming the mouse and input system before finding the setting that worked.
+4. **Change one thing at a time and rebuild.** Otherwise, it becomes hard to know which change made a difference, and careless edits can introduce compile errors.
+5. **Check the final code, not just the playtest.** Removing the duplicate 120 FPS assignment helped make the final settings consistent.
+
+For me, this was the most useful part of developing Depthbound. I learned more from the failed tests and the final Windows build than I would have learned by only playing inside the Unity Editor.
 
 ## 2. Creating 3D Monsters from 2D Sprites
 
