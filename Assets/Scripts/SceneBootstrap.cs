@@ -50,7 +50,6 @@ namespace Depthbound
             QualitySettings.shadowResolution =
                 ShadowResolution.Low;
             QualitySettings.softParticles = false;
-            Application.targetFrameRate = 120;
         }
     }
 
