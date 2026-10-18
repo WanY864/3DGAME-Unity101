@@ -45,7 +45,7 @@ The HUD shows important information such as health, combat status, and boost coo
 - **Combat:** Two weapon styles, attack combos, blocking, and parrying.
 - **Enemy variety:** Different monster types with different health, speed, attack damage, and behaviors.
 - **Mercy / Sin choices:** Decide what happens to some defeated enemies.
-- **Visual style:** Runtime-generated pixel sprites and a layered extrusion-like effect for monster thickness.
+- **3D monster visuals:** Pixel-art enemies given 3D depth using a layered extrusion method.
 - **UI, audio, and scenes:** Live HUD, sound effects, a main menu, a game scene, and buttons to quit.
 
 ### A small code example: Rigidbody boost
@@ -127,11 +127,11 @@ I also discovered a second targetFrameRate assignment later in the same method. 
 
 I still do not fully understand every reason this particular setup behaved differently in the EXE, but I learned that frame timing and input responsiveness are connected. **A game that feels fine in the Unity Editor is not automatically ready to submit as a Windows build.**
 
-## 2. Making the 2D Monsters Look More 3D
+## 2. Creating 3D Monsters from 2D Sprites
 
-Another challenge was the monster art. The enemies were made from pixel sprites. I liked how they fit the style of the dungeon, but they looked too flat in a 3D world.
+Another challenge was turning my 2D pixel-art monsters into 3D enemies. I wanted the characters to have visible depth and still match the art style of the dungeon.
 
-Instead of remaking all the monsters as detailed 3D models, I tried a simple **extrusion-like layered sprite method**. In [EnemyController.cs](Assets/Scripts/EnemyController.cs), my AddMonsterThickness() method creates five extra copies of the sprite, places them at different depths behind the original, and makes them darker.
+I used a **3D extrusion technique** based on layered sprites. In [EnemyController.cs](Assets/Scripts/EnemyController.cs), my AddMonsterThickness() method creates five extra copies of each sprite, places them at increasing depths behind the original, and gives them a darker color to form the sides.
 
 Here is the main idea from my code:
 
@@ -160,7 +160,7 @@ private void AddMonsterThickness(GameObject spriteObject)
 }
 ~~~
 
-This is **not a real closed 3D mesh**. It is a 2.5D depth effect made with layered SpriteRenderers. For this project, I thought it was a useful compromise because it kept the original pixel-art appearance and gave the monsters a thicker look without requiring a new modeling workflow.
+The result gives the monsters **3D depth** while keeping their original pixel-art appearance. I liked this approach because I could improve the 3D visuals without rebuilding every monster model from scratch.
 
 ## 3. Playtesting Enemy Health and Player Stats
 
@@ -182,7 +182,7 @@ I tested the player side too. The player starts with **100 health**, and I adjus
 
 ## What I Learned
 
-The biggest lesson for me was that **finishing the code is not the same as finishing the game**. I needed to test the exported version, read errors from Player.log, question my first assumptions, and compare my changes carefully. I am glad that I eventually fixed the Windows mouse-camera problem, found a practical way to make the pixel monsters feel less flat, and improved the combat through testing.
+The biggest lesson for me was that **finishing the code is not the same as finishing the game**. I needed to test the exported version, read errors from Player.log, question my first assumptions, and compare my changes carefully. I am glad that I eventually fixed the Windows mouse-camera problem, used extrusion to give my pixel-art monsters 3D depth, and improved the combat through testing.
 
 ---
 
